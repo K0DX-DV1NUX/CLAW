@@ -92,7 +92,7 @@ class SeasonalExtractor(nn.Module):
         # Initialize weights symmetrically
         with torch.no_grad():
             for c in range(channels):
-                w = torch.randn(self.kernel_size)
+                w = torch.empty(self.kernel_size).uniform_(-1.0, 1.0)
                 sym_w = 0.5 * (w + torch.flip(w, dims=[0]))  # symmetric kernel
                 self.season.weight[c, 0] = sym_w
 

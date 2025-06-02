@@ -9,7 +9,7 @@ data_path_name=ETTh1.csv
 model_id_name=ETTh1
 data_name=ETTh1
 
-for seq_len in  336 512 720
+for seq_len in 512
 do
 for pred_len in 48 96 192 336 512 720
 do
@@ -31,7 +31,7 @@ do
       --bias 0 \
       --sym_regularizer 1 \
       --decomposer_depth 1 \
-      --seasons 3 \
+      --seasons 4 \
       --kernel_size 70 \
       --patience 10 \
       --des 'Exp' \
