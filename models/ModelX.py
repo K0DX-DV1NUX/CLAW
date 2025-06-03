@@ -66,15 +66,8 @@ class Seasonal(nn.Module):
         self.register_buffer('f_modes_inv', torch.conj(self.f_modes).T)
         
         # Initialize the diagonal to enforce symmetry
-        half_len = (seq_len + 1) // 2  # handles both even and odd
-        w_half = nn.Parameter(torch.empty(half_len).uniform_(-1.0, 1.0))
-                
-        if seq_len % 2 == 0:
-            w_full = torch.cat([w_half, w_half.flip(0)], dim=0)
-        else:
-            w_full = torch.cat([w_half[:-1], w_half[-1:], w_half[:-1].flip(0)], dim=0)
 
-        self.diagonal = nn.Parameter(w_full, requires_grad=True)
+        self.diagonal = nn.Parameter(nn.init.uniform_(torch.empty(seq_len), a=-1.0, b=1.0), requires_grad=True)
 
 
     
@@ -116,11 +109,11 @@ class EncoderBlock(nn.Module):
         super(EncoderBlock, self).__init__()
         self.trend = Trend(kernel_size=trend_kernel_size, stride=1)
         
-        f_modes = Seasonal._fourier_basis(seq_len)
-        #seasonal_f_modes = [f_modes[i*seq_len:(i+1)*seq_len, i*seq_len:(i+1)*seq_len] for i in range(seasons)]
+        f_modes = Seasonal._fourier_basis(seq_len*seasons)
+        seasonal_f_modes = [f_modes[i*seq_len:(i+1)*seq_len, i*seq_len:(i+1)*seq_len] for i in range(seasons)]
         
         self.seasonal_list = nn.ModuleList([
-            Seasonal(seq_len, f_modes) for _ in range(seasons)
+            Seasonal(seq_len, seasonal_f_modes[_]) for _ in range(seasons)
         ])
 
     # x: [batch_size, channels, seq_len]

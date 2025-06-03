@@ -111,6 +111,15 @@ class SeasonalExtractor(nn.Module):
         flipped = torch.flip(kernel, dims=[-1])  # flip over kernel dimension
         return (kernel - flipped).norm(p=2)
 
+    def orthogonality_regularizer(self) -> torch.Tensor:
+        """
+        Encourages each kernel to have unit norm (orthonormal-like behavior).
+        """
+        kernel = self.season.weight  # shape: [C, 1, K]
+        flat_kernels = kernel.view(self.channels, -1)  # [C, K]
+        norms = flat_kernels @ flat_kernels.T  # [C, C] Gram matrix
+        identity = torch.eye(self.channels, device=norms.device)
+        return ((norms - identity)**2).mean()
 
 # === One-Layer Encoder Block: Trend + Multiple Seasonals ===
 class DenoisingBlock(nn.Module):
@@ -135,7 +144,7 @@ class DenoisingBlock(nn.Module):
         return x - x_rem  # Reconstruct denoised signal
 
     def symmetry_regularizer(self) -> torch.Tensor:
-        return sum(s.symmetry_regularizer() for s in self.multi_seasonals)
+        return sum(s.orthogonality_regularizer() for s in self.multi_seasonals) #sum(s.symmetry_regularizer() for s in self.multi_seasonals) +
 
 # === Stacked Denoising Blocks ===
 class DenoisingStack(nn.Module):
@@ -170,11 +179,6 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len  # Input sequence length
         self.pred_len = configs.pred_len  # Prediction horizon
         self.channels = configs.enc_in  # Number of input channels (features)
-        
-        # Model architecture hyperparameters
-        encoder_depth = 3
-        trend_kernel_size = 25
-        num_seasonals = 3
 
         encoder_depth = configs.decomposer_depth
         trend_kernel_size = configs.kernel_size
@@ -185,7 +189,7 @@ class Model(nn.Module):
         self.encoder = DenoisingStack(num_blocks=encoder_depth,
                                       trend_kernel_size=trend_kernel_size,
                                       seasonal_kernel_size=self.seq_len,
-                                      num_seasonals=num_seasonals,
+                                      num_seasonals=num_seasons,
                                       channels=self.channels)
 
         # Final prediction layer: maps denoised seq to future horizon
