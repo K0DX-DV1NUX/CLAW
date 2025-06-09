@@ -9,9 +9,9 @@ data_path_name=ETTh1.csv
 model_id_name=ETTh1
 data_name=ETTh1
 
-for seq_len in 512
+for pred_len in 720 512 336 192 96 48
 do
-for pred_len in 48 96 192 336 512 720
+for seq_len in 336 512 720
 do
     python -u run_longExp.py \
       --is_training 1 \
@@ -29,9 +29,7 @@ do
       --train_epochs 50 \
       --rank 35 \
       --bias 0 \
-      --sym_regularizer 1 \
-      --decomposer_depth 1 \
-      --seasons 4 \
+      --custom_regularizer 1 \
       --kernel_size 70 \
       --patience 10 \
       --des 'Exp' \
