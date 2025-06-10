@@ -1,6 +1,6 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from models import DLinear, PatchTST, FreTS, SparseTSF, iTransformer, FrNet, ModelX, ModelX2
+from models import DLinear, PatchTST, FreTS, SparseTSF, iTransformer, FrNet, ModelX2
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
 
@@ -34,7 +34,6 @@ class Exp_Main(Exp_Basic):
             'SparseTSF': SparseTSF,
             'iTransformer': iTransformer,
             'FrNet': FrNet,
-            'ModelX': ModelX,
             'ModelX2': ModelX2,
         }
         model = model_dict[self.args.model].Model(self.args).float()
@@ -135,6 +134,7 @@ class Exp_Main(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+        criterion2 = nn.KLDivLoss(reduction='batchmean')
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -204,17 +204,16 @@ class Exp_Main(Exp_Basic):
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                     
-                    if self.args.regularizer:
-                        reg_loss = self.args.regularization_rate * torch.mean(torch.abs(outputs))
-                    else:
-                        reg_loss = 0.0
 
-                    if self.args.sym_regularizer:
-                        sym_loss = self.model.symmetry_regularizer()
+                    if self.args.custom_regularizer:                    
+                        custom_loss = self.model.custom_regularizer()
                     else:
-                        sym_loss = 0.0
+                        custom_loss = torch.tensor(0.0, device=self.device)
                     
-                    loss = criterion(outputs, batch_y) + reg_loss + sym_loss
+                    log_outputs = torch.log_softmax(outputs, dim=-1)
+                    log_batch_y = torch.log_softmax(batch_y, dim=-1)
+                    loss = criterion(outputs, batch_y) + criterion2(log_outputs, log_batch_y) + 0.01 * custom_loss
+                
                     train_loss.append(loss.item())
 
                 if (i + 1) % 100 == 0:

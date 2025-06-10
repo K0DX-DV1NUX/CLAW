@@ -1,6 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.fft import dct, idct
+import math
+
+class FFN(nn.Module):
+    def __init__(self, in_features, out_features, hidden_features=None, dropout=0.0):
+        super(FFN, self).__init__()
+        if hidden_features is None:
+            hidden_features = in_features
+        self.linear1 = nn.Linear(in_features, hidden_features)
+        self.linear2 = nn.Linear(hidden_features, out_features)
+        self.dropout = nn.Dropout(dropout)
+    def forward(self, x):
+        x = self.linear1(x)
+        x = F.relu(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+        return x
 
 class LowRank(nn.Module):
     """
@@ -34,13 +51,13 @@ class LowRank(nn.Module):
         return out
 
 # === Trend Extraction via Moving Average ===
-class TrendExtractor(nn.Module):
+class AvgPooling(nn.Module):
     """
     Extracts trend from the time series using average pooling,
     with front-padding to preserve alignment.
     """
     def __init__(self, kernel_size: int, stride: int):
-        super(TrendExtractor, self).__init__()
+        super(AvgPooling, self).__init__()
         self.kernel_size = kernel_size
         self.avg = nn.AvgPool1d(kernel_size=kernel_size, 
                                 stride=stride, 
@@ -54,43 +71,69 @@ class TrendExtractor(nn.Module):
         return self.avg(x)  # [batch_size, channels, seq_len]    
     
   
-# === Seasonal Pattern Extraction via Depthwise Convolution ===
-class SeasonalExtractor(nn.Module):
+# === StationaryWaveletTransform ===
+class SWTExtractor(nn.Module):
     """
     
     """
 
-    def __init__(self, kernel_size: int, channels: int):
-        super(SeasonalExtractor, self).__init__()
+    def __init__(self, kernel_size: int, features: int, channels: int):
+        super(SWTExtractor, self).__init__()
         self.kernel_size = kernel_size
-        self.stride = 1
-        self.channels = channels
+        self.features = features # Number of input features
+        self.channels = channels # Number of channels to expand each feature to.
 
-        self.season = nn.Conv1d(in_channels=channels,
-                                out_channels=channels,
+        # Depthwise convolution to expand each feature into multiple channels
+        self.conv_DW = nn.Conv1d(in_channels=features,
+                                out_channels=features * channels,
                                 kernel_size=self.kernel_size,
-                                stride=self.stride,
-                                groups=channels,
+                                stride=1,
+                                groups=features,
                                 padding="same",
+                                bias=False)
+
+        # Pointwise convolution to reduce the number of channels back to features
+        self.conv_PW = nn.Conv1d(in_channels= features * channels,
+                                out_channels=features,
+                                kernel_size=1,
+                                stride=1,
+                                padding=0,
+                                groups=features,
                                 bias=False)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [batch_size, channels, seq_len]
-        return self.season(x)
+        batch_size, _, _ = x.shape
+
+        # Depthwise convolution to expand features into multiple channels
+        out = self.conv_DW(x)
+
+        # Reshape and apply softmax across channels
+        out = out.reshape(batch_size, self.features, self.channels, -1)
+        out = F.softmax(out, dim=2)
+
+        # Reshape back and apply pointwise convolution
+        out = out.reshape(batch_size, self.features * self.channels, -1)
+        out = self.conv_PW(out)
+        
+        return out
 
 
     def orthogonality_regularizer(self) -> torch.Tensor:
         """
         Encourages each kernel to have unit norm (orthonormal-like behavior).
         """
-        kernel = self.season.weight  # shape: [C, 1, K]
-        flat_kernels = kernel.view(self.channels, -1)  # [C, K]
-        norms = flat_kernels @ flat_kernels.T  # [C, C] Gram matrix
-        identity = torch.eye(self.channels, device=norms.device)
-        return ((norms - identity)**2).mean()
-        # return torch.norm(norms-identity, p="fro")**2
+        weight = self.conv_DW.weight.reshape(self.features, self.channels,-1)
 
+        reg= torch.tensor(0.0, device=weight.device)
+        for i in range(self.features):
+            kernel = weight[i]
+            norm = kernel @ kernel.T
+            identity = torch.eye(self.channels, device=norm.device)
+            reg += torch.norm(norm - identity, p='fro') ** 2
+        
+        return reg
 
 
 class Model(nn.Module):
@@ -100,52 +143,60 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len  # Input sequence length
         self.pred_len = configs.pred_len  # Prediction horizon
         self.channels = configs.enc_in  # Number of input channels (features)
-        self.gating_type = "soft"
 
-        encoder_depth = configs.decomposer_depth
-        trend_kernel_size = configs.kernel_size
+        encoder_depth = 3
+        trend_kernel_size = 50 #configs.kernel_size
         num_seasons = configs.seasons
         rank = configs.rank
 
-        self.trend_extractor = TrendExtractor(kernel_size=trend_kernel_size)
-        self.seasonal_extractor = SeasonalExtractor(kernel_size=9, channels=self.channels)
+        self.avg_pooling = AvgPooling(kernel_size=trend_kernel_size, stride=1)
 
-        # Gating to combine multiple seasonal filters
-        self.gating_type = configs.gating_type  # "soft" or "hard"
-        self.gate = nn.Sequential(
-            nn.Conv1d(self.channels, self.channels, kernel_size=1),
-            nn.Sigmoid() if self.gating_type == "soft" else nn.Softmax(dim=1)
-        )
+        # SWT extractor for trend and seasonal components
+        self.swt_trend = SWTExtractor(kernel_size=16, features=self.channels, channels=8)
+        self.swt_season = SWTExtractor(kernel_size=16, features=self.channels, channels=8)
 
-        # Final prediction layer: maps denoised seq to future horizon
+        ## Prediction Layers
         self.pred_trend = nn.Linear(self.seq_len, self.pred_len)
-        self.pred_seasonal = nn.Linear(self.seq_len, self.pred_len)
+        self.pred_season = nn.Linear(self.seq_len, self.pred_len)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [batch_size, seq_len, channels]
         x = x.permute(0, 2, 1)  # -> [B, C, L]
         seq_mean = torch.mean(x, dim=-1, keepdim=True)
         
-        trend = self.trend_extractor(x)
-        seasonal_input = x - trend
+        trend_input = self.avg_pooling(x)  # [B, C, L]
+        season_input = x - trend_input  # Remove trend from input
 
-        seasonal_components = self.seasonal_extractor(seasonal_input)  # [B, C, L]
 
-        gate_weights = self.gate(seasonal_components)  # [B, C, L]
-        if self.gating_type == "hard":
-            # Convert to hard gate: select max filter per position
-            max_gate = F.one_hot(gate_weights.argmax(dim=1), num_classes=self.channels)  # [B, L, C]
-            gate_weights = max_gate.permute(0, 2, 1).float()  # [B, C, L]
+        #trend_input += self.swt_trend(trend_input)
+        season_input += self.swt_season(season_input)
 
-        # Apply gate to seasonal components (elementwise)
-        seasonal = seasonal_components * gate_weights  # [B, C, L]
 
-        # Combine across filters/channels
-        seasonal = seasonal.sum(dim=1, keepdim=True)  # [B, 1, L]
-        trend = trend.sum(dim=1, keepdim=True)        # [B, 1, L]
+        out_trend = self.pred_trend(trend_input)
+        out_season = self.pred_season(season_input)
 
-        out_season = self.pred_seasonal(seasonal)
-        out_trend = self.pred_trend(seasonal)
+        out = out_trend + out_season  # Combine trend and season predictions
 
-    def symmetry_regularizer(self) -> torch.Tensor:
-        return self.encoder.symmetry_regularizer()
+        out = out + seq_mean
+        return out.permute(0,2,1)
+
+    def custom_regularizer(self) -> torch.Tensor:
+        reg_loss = torch.tensor(0.0)
+        reg_loss += self.swt_trend.orthogonality_regularizer()
+        reg_loss += self.swt_season.orthogonality_regularizer()
+
+        return reg_loss
+
+    # def reconstruction_loss(self) -> torch.Tensor:
+    #     """
+    #     Computes the reconstruction loss based on the trend and seasonal components.
+    #     """
+    #     if self.season_before is None or self.trend_before is None:
+    #         return torch.tensor(0.0, device=self.trend_after.device)
+
+    #     # Calculate the reconstruction loss
+    #     trend_loss = F.mse_loss(self.trend_after, self.trend_before)
+    #     season_loss = F.mse_loss(self.season_after, self.season_before)
+
+    #     return trend_loss + season_loss
