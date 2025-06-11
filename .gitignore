@@ -180,3 +180,7 @@ checkpoints/
 results/
 
 .vscode/
+
+test_results/
+
+*result.txt

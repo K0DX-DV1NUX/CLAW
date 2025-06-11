@@ -134,7 +134,7 @@ class Exp_Main(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
-        criterion2 = nn.KLDivLoss(reduction='batchmean')
+        #criterion2 = nn.KLDivLoss(reduction='batchmean')
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -205,14 +205,13 @@ class Exp_Main(Exp_Basic):
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                     
 
-                    if self.args.custom_regularizer:                    
-                        custom_loss = self.model.custom_regularizer()
-                    else:
-                        custom_loss = torch.tensor(0.0, device=self.device)
+                   
                     
-                    log_outputs = torch.log_softmax(outputs, dim=-1)
-                    log_batch_y = torch.log_softmax(batch_y, dim=-1)
-                    loss = criterion(outputs, batch_y) + criterion2(log_outputs, log_batch_y) + 0.01 * custom_loss
+                    #log_outputs = torch.log_softmax(outputs, dim=-1)
+                    #log_batch_y = torch.log_softmax(batch_y,  dim=-1)
+                    custom_loss = self.model.regularizer()
+
+                    loss = criterion(outputs, batch_y) + custom_loss
                 
                     train_loss.append(loss.item())
 
@@ -387,7 +386,7 @@ class Exp_Main(Exp_Basic):
         print(f"MACS:{flops}, Params: {params}")
         f = open(f"{self.args.model}_result.txt", 'a')
         f.write(setting + "  \n")
-        f.write(f"Decomposer_depth: {self.args.decomposer_depth} kernel-size:{self.args.kernel_size} Seasons:{self.args.seasons} Rank:{self.args.rank} Bias:{self.args.bias} \n")
+        #f.write(f"Decomposer_depth: {self.args.decomposer_depth} kernel-size:{self.args.kernel_size} Seasons:{self.args.seasons} Rank:{self.args.rank} Bias:{self.args.bias} \n")
         f.write('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
         f.write(f"\n MACS:{flops}, Params: {params}, Model Size: {model_size_mb}")
         f.write('\n')

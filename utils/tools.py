@@ -20,7 +20,7 @@ def adjust_learning_rate(optimizer, scheduler, epoch, args, printout=True):
             10: 5e-7, 15: 1e-7, 20: 5e-8
         }
     elif args.lradj == 'type3':
-        lr_adjust = {epoch: args.learning_rate if epoch < 3 else args.learning_rate * (0.8 ** ((epoch - 3) // 1))}
+        lr_adjust = {epoch: args.learning_rate if epoch < 3 else args.learning_rate * (0.5 ** ((epoch - 3) // 1))}
     elif args.lradj == 'constant':
         lr_adjust = {epoch: args.learning_rate}
     elif args.lradj == '3':
@@ -52,11 +52,11 @@ class EarlyStopping:
         self.delta = delta
 
     def __call__(self, val_loss, model, path):
-        score = -val_loss
+        score = val_loss
         if self.best_score is None:
             self.best_score = score
             self.save_checkpoint(val_loss, model, path)
-        elif score < self.best_score + self.delta:
+        elif score > self.best_score + self.delta:
             self.counter += 1
             print(f'EarlyStopping counter: {self.counter} out of {self.patience}')
             if self.counter >= self.patience:
