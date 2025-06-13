@@ -6,15 +6,14 @@ from scipy.fft import dct, idct
 import math
 
 
-class DWTExtractor(nn.Module):
+class SWTExtractor(nn.Module):
 
     def __init__(self, kernel_size: int, in_features: int):
-        super(DWTExtractor, self).__init__()
+        super(SWTExtractor, self).__init__()
         self.kernel_size = kernel_size
         self.channels = 2 # Number of input features
         self.in_features = in_features # Number of channels to expand each feature to.
 
-        padding = kernel_size // 2 - 1
         # Depthwise convolution to expand each feature into multiple channels
         self.conv_DW = nn.Conv1d(in_channels=self.in_features,
                                 out_channels=self.in_features * self.channels,
@@ -31,10 +30,10 @@ class DWTExtractor(nn.Module):
         out = self.conv_DW(x) #/ math.sqrt(self.kernel_size)
         out = F.tanh(out)
 
-        approx = out[:, ::2, :]
-        detail = out[:, 1::2, :]
+        coef1 = out[:, ::2, :]
+        coef2 = out[:, 1::2, :]
 
-        return approx, detail
+        return coef1, coef2
     
     def orthogonality_regularizer(self) -> torch.Tensor:
         """
@@ -53,21 +52,40 @@ class DWTExtractor(nn.Module):
     
     def variance_regularizer(self) -> torch.Tensor:
         weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
-        approx_weights = weight[:, ::2, :]
-        detail_weights = weight[:, 1::2, :]
+        coef1_weights = weight[:, ::2, :]
+        coef2_weights = weight[:, 1::2, :]
 
-        detail_var = detail_weights.var(dim=-1).mean()
-        approx_var = approx_weights.var(dim=-1).mean()
+        coef2_var = coef2_weights.var(dim=-1).mean()
+        coef1_var = coef1_weights.var(dim=-1).mean()
 
-        return detail_var - approx_var
+        return  -coef1_var
 
+    def covariance_regularizer(self) -> torch.Tensor:
+        reg = torch.Tensor([0.0])
+        weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
+        for i in range(self.in_features):
+            filter_weight = weight[i]
+            covar_mat = filter_weight.cov()
+
+            covariance = (covar_mat - torch.diag(torch.diag(covar_mat))).triu().flatten()
+
+
+            # Positive Covariance test
+            reg -= covariance.pow(2).sum()
+
+            # Negative Covariance Test
+            # identity = torch.ones(covariance.shape)
+            # negative_covar = identity - covariance.pow(2)
+            # reg += negative_covar.sum()
+
+        return reg
 
 
 class NyquistLinear(nn.Module):
     def __init__(self, in_features, out_features, rank=30, bias=True):
         super(NyquistLinear, self).__init__()
         self.bias = bias
-        self.length = out_features * 2 + 1
+        
         Pr = torch.empty(in_features, rank)
         Pi = torch.empty(in_features, rank)
 
@@ -123,17 +141,17 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len  # Input sequence length
         self.pred_len = configs.pred_len  # Prediction horizon
         self.channels = configs.enc_in  # Number of input channels (features)
-        self.rank = 30  # Rank for low-rank approximation
+        self.rank = 30  # Rank for low-rank coef1imation
         self.bias = 1  # Whether to include bias
         self.individual = 0  # Use separate models per channel
         self.enable_Haar = 1  # Enable Haar transformation
         self.enable_DCT = 0  # Enable Discrete Cosine Transform
         self.enable_iDCT = 0  # Enable Inverse Discrete Cosine Transform
-        self.enable_lowrank = 0  # Enable low-rank approximation
+        self.enable_lowrank = 0  # Enable low-rank coef1imation
         self.patch_size = 16
         self.depth = 4
 
-        self.dwt = nn.ModuleList([DWTExtractor(8, in_features=self.channels) for _ in range(self.depth)])
+        self.dwt = nn.ModuleList([SWTExtractor(8, in_features=self.channels) for _ in range(self.depth)])
 
 
         self.pred = NyquistLinear(in_features=self.seq_len//2 + 1, 
@@ -158,8 +176,8 @@ class Model(nn.Module):
         x = x - seq_mean  # Normalize input
         
         for i in range(self.depth):
-            approx, detail = self.dwt[i](x)
-            x -= detail
+            coef1, coef2 = self.dwt[i](x)
+            x -= coef2
 
 
         x = torch.fft.rfft(x, dim=-1, norm="backward")
@@ -177,7 +195,6 @@ class Model(nn.Module):
     def regularizer(self):
 
         reg = torch.tensor([0.0])
-        for i in range(self.depth):
-            #reg += self.dwt[i].orthogonality_regularizer()
-            reg += self.dwt[i].variance_regularizer()
+        # for i in range(self.depth):
+        #     reg += self.dwt[i].covariance_regularizer()
         return  1.0 * reg
