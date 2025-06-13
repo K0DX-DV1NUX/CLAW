@@ -6,6 +6,36 @@ from scipy.fft import dct, idct
 import math
 
 
+class LowRank(nn.Module):
+    """
+    Implements a low-rank approximation layer using two smaller weight matrices (A and B).
+    This reduces the number of parameters compared to a full-rank layer.
+    """
+    def __init__(self, in_features, out_features, rank, bias=True):
+        super(LowRank, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.rank = rank
+        self.bias = bias
+
+        # Initialize weight matrices A (in_features x rank) and B (rank x out_features)
+        wA = torch.empty(self.in_features, rank)
+        wB = torch.empty(self.rank, self.out_features)
+        self.A = nn.Parameter(nn.init.uniform_(wA, a= (-1 / math.sqrt(self.in_features)), b=(1 / math.sqrt(self.in_features))))
+        self.B = nn.Parameter(nn.init.uniform_(wB, a= (-1 / math.sqrt(self.out_features)), b=(1 / math.sqrt(self.out_features))))
+
+        # Initialize bias if required
+        if self.bias:
+            wb = torch.empty(self.out_features)
+            self.b = nn.Parameter(nn.init.uniform_(wb, a= (-1 / math.sqrt(self.out_features)), b=(1 / math.sqrt(self.out_features))))
+
+    def forward(self, x):
+        # Apply low-rank transformation: X * A * B
+        out = x @ self.A @ self.B
+        if self.bias:
+            out += self.b  # Add bias if enabled
+        return out
+
 class SWTExtractor(nn.Module):
 
     def __init__(self, kernel_size: int, in_features: int):
@@ -30,60 +60,58 @@ class SWTExtractor(nn.Module):
         out = self.conv_DW(x) #/ math.sqrt(self.kernel_size)
         out = F.tanh(out)
 
-        coef1 = out[:, ::2, :]
-        coef2 = out[:, 1::2, :]
+        if self.channels > 1:
+            coeff = out[:, (self.channels - 1)::self.channels, :]
+        else:
+            coeff = out
 
-        return coef1, coef2
+        return coeff
     
-    def orthogonality_regularizer(self) -> torch.Tensor:
-        """
-        Encourages each kernel to have unit norm (orthonormal-like behavior).
-        """
-        weight = self.conv_DW.weight.reshape(self.in_features, self.channels,-1)
+    # def orthogonality_regularizer(self) -> torch.Tensor:
+    #     """
+    #     Encourages each kernel to have unit norm (orthonormal-like behavior).
+    #     """
+    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels,-1)
 
-        reg= torch.tensor(0.0, device=weight.device)
-        for i in range(self.in_features):
-            kernel = weight[i]
-            norm = kernel @ kernel.T
-            identity = torch.eye(self.channels, device=norm.device)
-            reg += torch.norm(norm - identity, p='fro') ** 2
+    #     reg= torch.tensor(0.0, device=weight.device)
+    #     for i in range(self.in_features):
+    #         kernel = weight[i]
+    #         norm = kernel @ kernel.T
+    #         identity = torch.eye(self.channels, device=norm.device)
+    #         reg += torch.norm(norm - identity, p='fro') ** 2
         
-        return reg
+    #     return reg
     
-    def variance_regularizer(self) -> torch.Tensor:
-        weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
-        coef1_weights = weight[:, ::2, :]
-        coef2_weights = weight[:, 1::2, :]
+    # def variance_regularizer(self) -> torch.Tensor:
+    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
+    #     coef1_weights = weight[:, ::2, :]
+    #     coef2_weights = weight[:, 1::2, :]
 
-        coef2_var = coef2_weights.var(dim=-1).mean()
-        coef1_var = coef1_weights.var(dim=-1).mean()
+    #     coef2_var = coef2_weights.var(dim=-1).mean()
+    #     coef1_var = coef1_weights.var(dim=-1).mean()
 
-        return  -coef1_var
+    #     return  -coef1_var
 
-    def covariance_regularizer(self) -> torch.Tensor:
-        reg = torch.Tensor([0.0])
-        weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
-        for i in range(self.in_features):
-            filter_weight = weight[i]
-            covar_mat = filter_weight.cov()
+    # def covariance_regularizer(self) -> torch.Tensor:
+    #     reg = torch.Tensor([0.0])
+    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
+    #     for i in range(self.in_features):
+    #         filter_weight = weight[i]
+    #         covar_mat = filter_weight.cov()
 
-            covariance = (covar_mat - torch.diag(torch.diag(covar_mat))).triu().flatten()
-
-
-            # Positive Covariance test
-            reg -= covariance.pow(2).sum()
-
-            # Negative Covariance Test
-            # identity = torch.ones(covariance.shape)
-            # negative_covar = identity - covariance.pow(2)
-            # reg += negative_covar.sum()
-
-        return reg
+    #         covariance = (covar_mat - torch.diag(torch.diag(covar_mat))).triu().flatten()
 
 
-class NyquistLinear(nn.Module):
+    #         # Positive Covariance test
+    #         reg -= covariance.pow(2).sum()
+
+
+    #     return reg
+
+
+class ComplexLowRank(nn.Module):
     def __init__(self, in_features, out_features, rank=30, bias=True):
-        super(NyquistLinear, self).__init__()
+        super(ComplexLowRank, self).__init__()
         self.bias = bias
         
         Pr = torch.empty(in_features, rank)
@@ -124,11 +152,6 @@ class NyquistLinear(nn.Module):
         if self.b is not None:
             out = out + self.b
 
-        mask = torch.complex(torch.zeros(out.shape), torch.zeros(out.shape))
-        mask[:,:,0].imag = out[:,:,0].imag
-
-        out = out - mask
-
         return out
 
 
@@ -154,10 +177,14 @@ class Model(nn.Module):
         self.dwt = nn.ModuleList([SWTExtractor(8, in_features=self.channels) for _ in range(self.depth)])
 
 
-        self.pred = NyquistLinear(in_features=self.seq_len//2 + 1, 
+        self.pred = ComplexLowRank(in_features=self.seq_len//2 + 1, 
                                 out_features=self.pred_len//2 + 1, 
                                 bias=self.bias,
                                 rank=15)
+        
+        # self.pred = nn.Linear(self.seq_len, self.pred_len, True)
+
+        # self.pred = LowRank(self.seq_len, self.pred_len, rank=15, bias=True)
         
 
     def forward(self, x):
@@ -176,8 +203,8 @@ class Model(nn.Module):
         x = x - seq_mean  # Normalize input
         
         for i in range(self.depth):
-            coef1, coef2 = self.dwt[i](x)
-            x -= coef2
+            coefficients = self.dwt[i](x)
+            x -= coefficients
 
 
         x = torch.fft.rfft(x, dim=-1, norm="backward")
