@@ -41,7 +41,7 @@ class SWTExtractor(nn.Module):
     def __init__(self, kernel_size: int, in_features: int):
         super(SWTExtractor, self).__init__()
         self.kernel_size = kernel_size
-        self.channels = 2 # Number of input features
+        self.channels = 3 # Number of input features
         self.in_features = in_features # Number of channels to expand each feature to.
 
         # Depthwise convolution to expand each feature into multiple channels
@@ -171,16 +171,16 @@ class Model(nn.Module):
         self.enable_DCT = 0  # Enable Discrete Cosine Transform
         self.enable_iDCT = 0  # Enable Inverse Discrete Cosine Transform
         self.enable_lowrank = 0  # Enable low-rank coef1imation
-        self.patch_size = 16
+        self.patch_size = 32
         self.depth = 4
 
-        self.dwt = nn.ModuleList([SWTExtractor(8, in_features=self.channels) for _ in range(self.depth)])
+        self.dwt = nn.ModuleList([SWTExtractor(32, in_features=self.channels) for _ in range(self.depth)])
 
 
         self.pred = ComplexLowRank(in_features=self.seq_len//2 + 1, 
                                 out_features=self.pred_len//2 + 1, 
                                 bias=self.bias,
-                                rank=15)
+                                rank=20)
         
         # self.pred = nn.Linear(self.seq_len, self.pred_len, True)
 
