@@ -6,7 +6,7 @@ fi
 
 
 
-model_name=ModelX2
+model_name=CLAW
 
 root_path_name=./dataset/
 data_path_name=ETTh2.csv

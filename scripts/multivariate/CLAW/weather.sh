@@ -1,3 +1,5 @@
+#!/bin/sh
+
 if [ ! -d "./logs" ]; then
     mkdir ./logs
 fi
@@ -5,9 +7,9 @@ fi
 model_name=CLAW
 
 root_path_name=./dataset/
-data_path_name=ETTh1.csv
-model_id_name=ETTh1
-data_name=ETTh1
+data_path_name=weather.csv
+model_id_name=weather
+data_name=custom
 
 for pred_len in 96 192 336 720
 do
@@ -25,7 +27,7 @@ do
       --train_type Linear \
       --seq_len $seq_len \
       --pred_len $pred_len \
-      --enc_in 7 \
+      --enc_in 21 \
       --train_epochs 100 \
       --rank 35 \
       --bias 0 \
@@ -39,5 +41,5 @@ do
       --learning_rate 0.01
 done
 done
-
+done
 

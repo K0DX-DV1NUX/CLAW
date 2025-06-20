@@ -4,7 +4,7 @@ if [ ! -d "./logs" ]; then
     mkdir ./logs
 fi
 
-model_name=ModelX
+model_name=CLAW
 
 root_path_name=./dataset/
 data_path_name=ETTm2.csv
