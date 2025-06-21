@@ -28,7 +28,7 @@ do
       --train_type Linear \
       --seq_len $seq_len \
       --pred_len $pred_len \
-      --period_len 32 \
+      --period_len 24 \
       --enc_in 7 \
       --train_epochs 100 \
       --patience 20 \
