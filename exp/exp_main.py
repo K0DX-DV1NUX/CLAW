@@ -209,9 +209,9 @@ class Exp_Main(Exp_Basic):
                     
                     #log_outputs = torch.log_softmax(outputs, dim=-1)
                     #log_batch_y = torch.log_softmax(batch_y,  dim=-1)
-                    custom_loss = self.model.regularizer()
+                    #custom_loss = self.model.regularizer()
 
-                    loss = criterion(outputs, batch_y) + custom_loss
+                    loss = criterion(outputs, batch_y) #+ custom_loss
                 
                     train_loss.append(loss.item())
 
