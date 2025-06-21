@@ -7,8 +7,8 @@ fi
 model_name=SparseTSF
 
 root_path_name=./dataset/
-data_path_name=traffic.csv
-model_id_name=traffic
+data_path_name=weather.csv
+model_id_name=Weather
 data_name=custom
 
 
@@ -29,7 +29,7 @@ do
       --seq_len $seq_len \
       --pred_len $pred_len \
       --period_len 24 \
-      --enc_in 862 \
+      --enc_in 21 \
       --train_epochs 100 \
       --patience 20 \
       --des 'Exp' \

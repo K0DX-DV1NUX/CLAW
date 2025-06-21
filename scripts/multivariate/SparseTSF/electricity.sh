@@ -12,9 +12,9 @@ model_id_name=Electricity
 data_name=custom
 
 
-for seq_len in 512
+for seq_len in 720
 do
-for pred_len in 512
+for pred_len in 96 192 336 720
 do    
     python -u run_longExp.py \
       --is_training 1 \
@@ -24,14 +24,14 @@ do
       --model_id $model_id_name'_'$seq_len'_'$pred_len \
       --model $model_name \
       --data $data_name \
-      --features S \
+      --features M \
       --train_type Linear \
       --seq_len $seq_len \
       --pred_len $pred_len \
-      --period_len 32 \
-      --enc_in 1 \
-      --train_epochs 50 \
-      --patience 10 \
+      --period_len 24 \
+      --enc_in 321 \
+      --train_epochs 100 \
+      --patience 20 \
       --des 'Exp' \
       --model_type 'linear' \
       --itr 1 --batch_size 32 --learning_rate 0.01
