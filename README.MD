@@ -1,15 +1,15 @@
-# HADL (Haar DCT Low-Rank) Framework for Noise Resilient Long Term Time Series Forecasting
+# CLAW: Complex Low-rank and Wavelet Transform for Univariate Long-term Time Series Forecasting
 
 ## Overview
-HADL is a lightweight, PyTorch-based framework for Long-Term Time Series Forecasting (LTSF), optimized for noise robustness, accuracy, and memory efficiency. It integrates Discrete Wavelet Transform (DWT) with a Haar wavelet for noise reduction, Discrete Cosine Transform (DCT) for enhanced feature extraction, and a low-rank layer for efficient, low-parameter forecasting. It is designed to achieve state-of-the-art multivariate forecasting accuracy with minimal trainable parameters, thus offers a computationally efficient solution for long-horizon time series prediction.
+CLAW is a lightweight, PyTorch-based framework for Long-term Time Series Forecasting (LTSF), designed to combine shift-invariant noise suppression with parameter efficiency. Built on the Stationary Wavelet Transform (SWT), CLAW progressively filters high-frequency noise by discarding one coefficient at each decomposition stage, preserving temporal alignment without downsampling. The denoised signal is transformed via real-valued FFT (rFFT) and processed by a novel complex low-rank linear layer, reducing parameters compared to full-rank designs while maintaining expressive capacity. An inverse rFFT reconstructs the forecast. Evaluated under a univariate, channel-independent setting for clearer attribution of design impact, CLAW achieves comparable or superior accuracy to larger Transformer baselines with only a fraction of their parameters, offering an efficient and effective solution for long-horizon forecasting.
 
 <img src="images/CLAW_architecture.png" alt="Image of CLAW architecture" width=800/>
 
 ## Key Features
-- **Haar Wavelet (DWT)**: Reduces noise and compresses the input, enabling a lightweight model with fewer parameters.
-- **Discrete Cosine Transform (DCT)**: Extracts meaningful long-term patterns.
-- **Low-Rank Approximation**: improve generalization and noise robustness while minimizing memory usage. 
-- **Lightweight Design**: A single prediction layer reduces overall complexity, ensuring that the model remains lightweight and interpretable
+- **Wavelet Signal Refinement Block**: Ensures shift invariance while progressively filtering high-frequency noise by discarding one coefficient at each stage leading to signal refinement over multiple blocks.
+- **SWT-like Wavelets**: Allows 1D convolution to operate like stationary wavelet filters with no regularization making them more adaptible to time series dataset that can capture detail level information to discard and refine signal aligning with classical wavelet theory.
+- **Complex Low-Rank Linear Layer**: Captures global frequency patterns in complex domain maintaining expressive power with reduced parameter compared to full-rank real-valued linear layers.
+- **Lightweight Design**: Delivers accuracy on par with large Transformer models while using only a fraction of their parameters.
 
 ## Usage
 
@@ -20,14 +20,12 @@ The model can be initialized with a configuration object that specifies various 
 configs = {
     'seq_len': 512,
     'pred_len': 96,
-    'enc_in': 7,
+    'enc_in': 1,
     'individual': False,
-    'bias': True,
-    'enable_Haar': True,
-    'enable_DCT': True,
-    'enable_iDCT': False,
-    'enable_lowrank': True,
-    'rank': 30,
+    'extractor_depth': 4,
+    'no_of_filters': 2,
+    'filter_size': 8
+    'rank': 15,
 }
 
 model = Model(configs)
@@ -39,12 +37,10 @@ model = Model(configs)
 | `pred_len`    | Output prediction length                      | -       |
 | `enc_in`    | Number of input features                      | -       |
 | `individual`  | If True, applies a separate layer per feature | False   |
-| `bias`        | Enables bias in the low-rank layer            | True    |
-| `enable_Haar` | Enables Haar decomposition                    | True    |
-| `enable_DCT`  | Enables Discrete Cosine Transform             | True    |
-| `enable_iDCT`  | Enables Inverse Discrete Cosine Transform    | False    |
-| `enable_lowrank`  | Enables Low Rank or Standard Linear Layer    | True    |
-| `rank`        | Rank of the low-rank layer                    | 30      |
+| `extractor_depth` | Number of WSR Blocks                    | 4    |
+| `no_of_filters`  | Number of filters/channels per WSR Blocks(even only)             | 2     |
+| `filter_size`  | Kernel size of filters in WSR Block (even only)    | 8    |
+| `rank`        | Rank of the complex low-rank layer                    | 15      |
 
 ### Forward Pass
 The forward method takes an input tensor of shape `[Batch, Input length, Channel]` and returns an output tensor of shape `[Batch, Output length, Channel]`.
@@ -56,7 +52,7 @@ output_tensor = model(input_tensor)
 
 # Results
 <img src="images/ETT_results.png" alt="ETT Results" width=800/>
-<img src="images/ELC_Traffic_results.png" alt="ETT Results" width=800/>
+<img src="images/ELC_Traffic_results.png" alt="Electricity and Traffic Results" width=800/>
 
 
 
