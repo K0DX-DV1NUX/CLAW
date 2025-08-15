@@ -52,7 +52,7 @@ output_tensor = model(input_tensor)
 
 # Results
 <img src="images/ETT_results.png" alt="ETT Results" width=800/>
-<img src="images/ELC_Traffic_results.png" alt="Electricity and Traffic Results" width=800/>
+<img src="images/ELC_Traffic_Results.png" alt="Electricity and Traffic Results" width=800/>
 
 
 
