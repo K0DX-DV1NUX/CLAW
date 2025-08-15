@@ -11,6 +11,13 @@ data_path_name=weather.csv
 model_id_name=weather
 data_name=custom
 
+# Best results can be acquired by combinations of the following parameters:
+# seq_len: 336, 512, 720
+# filter_size: 8, 16, 32
+# filters: 1, 2, 4
+# extractor_depth: 2, 4, 6
+# rank: 15, 25
+
 for pred_len in 96 192 336 720
 do
 for seq_len in 336 512 720
@@ -20,7 +27,7 @@ do
       --individual 0 \
       --root_path $root_path_name \
       --data_path $data_path_name \
-      --model_id $model_id_name'_'$seq_len'_'$pred_len \
+      --model_id $model_id_name \
       --model $model_name \
       --data $data_name \
       --features M \
@@ -28,18 +35,18 @@ do
       --seq_len $seq_len \
       --pred_len $pred_len \
       --enc_in 21 \
-      --train_epochs 100 \
-      --rank 35 \
-      --bias 0 \
-      --custom_regularizer 0 \
-      --kernel_size 70 \
-      --patience 20 \
+      --rank 25 \
+      --filters 3 \
+      --filter_size 32 \
+      --extractor_depth 4 \
+      --train_epochs 50 \
+      --patience 10 \
       --des 'Exp' \
       --itr 1 \
-      --lradj type3 \
+      --lradj 'type7' \
       --batch_size 32 \
-      --learning_rate 0.01
+      --num_workers 0 \
+      --learning_rate 0.001 \
+      --seed 2021
 done
 done
-done
-
