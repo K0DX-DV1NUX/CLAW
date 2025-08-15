@@ -27,7 +27,7 @@ do
       --individual 1 \
       --root_path $root_path_name \
       --data_path $data_path_name \
-      --model_id $model_id_name'_'$seq_len'_'$pred_len \
+      --model_id $model_id_name \
       --model $model_name \
       --data $data_name \
       --features S \
@@ -37,8 +37,8 @@ do
       --enc_in 1 \
       --rank 15 \
       --filters 2 \
-      --filter_size 8 \
-      --extractor_depth 3 \
+      --filter_size 16 \
+      --extractor_depth 4 \
       --train_epochs 50 \
       --patience 10 \
       --des 'Exp' \
@@ -46,7 +46,8 @@ do
       --lradj 'type7' \
       --batch_size 32 \
       --num_workers 0 \
-      --learning_rate 0.001
+      --learning_rate 0.001 \
+      --seed 2021
 done
 done
 

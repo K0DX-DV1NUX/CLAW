@@ -6,16 +6,17 @@ import random
 import numpy as np
 from utils.str2bool import str2bool
 
-fix_seed = 2021
-random.seed(fix_seed)
-torch.manual_seed(fix_seed)
-np.random.seed(fix_seed)
+import warnings
+warnings.filterwarnings("ignore")
+
+
 parser = argparse.ArgumentParser(description='HADL & other models for Time Series Forecasting')
 
 # basic config
+parser.add_argument('--seed', type=int, default=2021, help='random seed')
 parser.add_argument('--is_training', type=int, required=True, default=1, help='status')
-parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
-parser.add_argument('--model', type=str, required=True, default='HADL', help='model name')
+parser.add_argument('--model_id', type=str, required=True, default='custom', help='model id_name')
+parser.add_argument('--model', type=str, required=True, default='CLAW', help='model name')
 parser.add_argument('--train_type', type=str, required=True, default="Linear", help="the method to calculate output: 1. Linear, 2. TCN")
 
 # data loader
@@ -37,17 +38,12 @@ parser.add_argument('--pred_len', type=int, default=96, help='prediction sequenc
 # DLinear
 parser.add_argument('--individual', type=int, default=0, help='individual head; True 1 False 0') # Used by PatchTST too.
 
-# HADL
-parser.add_argument('--rank', type=int, default=50, help='rank of low rank matrix')
-parser.add_argument('--enable_lowrank', type=int, default=1, help='enable low rank approximation; True 1 False 0')
-parser.add_argument('--enable_Haar', type=int, default=1, help='enable Haar wavelet transformation; True 1 False 0')
-parser.add_argument('--enable_DCT', type=int, default=1, help='enable DCT transformation; True 1 False 0')
-parser.add_argument('--enable_iDCT', type=int, default=0, help='enable inverse DCT transformation; True 1 False 0')
-parser.add_argument('--bias', type=int, default=1, help='enable bias; True 1 False 0')
+# CLAW
+parser.add_argument('--rank', type=int, default=15, help='rank of low rank matrix')
+parser.add_argument('--filters', type=int, default=2, help='number of filters in the convolutional layer')
+parser.add_argument('--filter_size', type=int, default=8, help='size of filter')
+parser.add_argument('--extractor_depth', type=int, default=4, help='number of decomposition levels')
 
-# SIRENet
-parser.add_argument('--stride', type=int, default=1, help='stride')
-parser.add_argument('--custom_regularizer', type=int, default=0, help='custom regularization; True 1 False 0')
 
 # PatchTST
 parser.add_argument('--fc_dropout', type=float, default=0.05, help='fully connected dropout')
@@ -148,8 +144,11 @@ parser.add_argument('--test_flop', action='store_true', default=False, help='See
 
 args = parser.parse_args()
 
-# random seed
-fix_seed_list = range(2023, 2033)
+fix_seed = args.seed
+
+random.seed(fix_seed)
+torch.manual_seed(fix_seed)
+np.random.seed(fix_seed)
 
 
 args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
@@ -168,25 +167,13 @@ Exp = Exp_Main
 if args.is_training:
     for ii in range(args.itr):
         # setting record of experiments
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
-            args.model_id,
+        setting = '{}_{}_ft{}_sl{}_pl{}_seed{}'.format(
             args.model,
-            args.data,
+            args.model_id,
             args.features,
             args.seq_len,
-            args.label_len,
             args.pred_len,
-            args.d_model,
-            args.n_heads,
-            args.e_layers,
-            args.d_layers,
-            args.d_ff,
-            args.factor,
-            args.embed,
-            args.model_type,
-            args.distil,
-            args.des,
-            args.class_strategy, ii)
+            args.seed)
 
         exp = Exp(args)  # set experiments
         print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -203,23 +190,7 @@ if args.is_training:
         torch.cuda.empty_cache()
 else:
     ii = 0
-    setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(args.model_id,
-                                                                                                  args.model,
-                                                                                                  args.data,
-                                                                                                  args.features,
-                                                                                                  args.seq_len,
-                                                                                                  args.label_len,
-                                                                                                  args.pred_len,
-                                                                                                  args.d_model,
-                                                                                                  args.n_heads,
-                                                                                                  args.e_layers,
-                                                                                                  args.d_layers,
-                                                                                                  args.d_ff,
-                                                                                                  args.factor,
-                                                                                                  args.embed,
-                                                                                                  args.distil,
-                                                                                                  args.des,
-                                                                                                  args.class_strategy, ii)
+    setting = '{}_{}_ft{}_sl{}_pl{}_seed{}'.format(args.model,args.model_id,args.features,args.seq_len,args.pred_len, args.seed)
 
     exp = Exp(args)  # set experiments
     print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))

@@ -33,12 +33,8 @@ do
       --features S \
       --train_type Linear \
       --seq_len $seq_len \
-      --pred_len $pred_len \
-      --enc_in 1 \
-      --rank 15 \
-      --filters 2 \
       --filter_size 16 \
-      --extractor_depth 5 \
+      --extractor_depth 4 \
       --train_epochs 50 \
       --patience 10 \
       --des 'Exp' \
@@ -46,6 +42,7 @@ do
       --lradj 'type7' \
       --batch_size 32 \
       --num_workers 0 \
-      --learning_rate 0.001
+      --learning_rate 0.001 \
+      --seed 2021
 done
 done
