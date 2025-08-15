@@ -4,60 +4,30 @@ import torch.nn.functional as F
 from torch.autograd import Function
 from scipy.fft import dct, idct
 import math
-
-
-class LowRank(nn.Module):
-    """
-    Implements a low-rank approximation layer using two smaller weight matrices (A and B).
-    This reduces the number of parameters compared to a full-rank layer.
-    """
-    def __init__(self, in_features, out_features, rank, bias=True):
-        super(LowRank, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.rank = rank
-        self.bias = bias
-
-        # Initialize weight matrices A (in_features x rank) and B (rank x out_features)
-        wA = torch.empty(self.in_features, rank)
-        wB = torch.empty(self.rank, self.out_features)
-        self.A = nn.Parameter(nn.init.uniform_(wA, a= (-1 / math.sqrt(self.in_features)), b=(1 / math.sqrt(self.in_features))))
-        self.B = nn.Parameter(nn.init.uniform_(wB, a= (-1 / math.sqrt(self.out_features)), b=(1 / math.sqrt(self.out_features))))
-
-        # Initialize bias if required
-        if self.bias:
-            wb = torch.empty(self.out_features)
-            self.b = nn.Parameter(nn.init.uniform_(wb, a= (-1 / math.sqrt(self.out_features)), b=(1 / math.sqrt(self.out_features))))
-
-    def forward(self, x):
-        # Apply low-rank transformation: X * A * B
-        out = x @ self.A @ self.B
-        if self.bias:
-            out += self.b  # Add bias if enabled
-        return out
+from layers.lowrank import ComplexLowRank
 
 class SWTExtractor(nn.Module):
 
-    def __init__(self, kernel_size: int, in_features: int):
+    def __init__(self, kernel_size: int, in_features: int, channels: int =2):
         super(SWTExtractor, self).__init__()
-        self.kernel_size = kernel_size
-        self.channels = 3 # Number of input features
-        self.in_features = in_features # Number of channels to expand each feature to.
+        self.kernel_size = kernel_size # Kerne size of the filters.
+        self.channels = channels # Number of filters.
+        self.in_features = in_features # Number of input features.
 
-        # Depthwise convolution to expand each feature into multiple channels
+        # Wavelet Signal Refinement Block.
         self.conv_DW = nn.Conv1d(in_channels=self.in_features,
                                 out_channels=self.in_features * self.channels,
                                 kernel_size=self.kernel_size,
                                 stride=1,
                                 groups=self.in_features,
                                 padding="same",
-                                bias=True)
+                                bias=False)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [batch_size, channels, seq_len]
         batch_size, _, _ = x.shape
         
-        out = self.conv_DW(x) #/ math.sqrt(self.kernel_size)
+        out = self.conv_DW(x)
         out = F.tanh(out)
 
         if self.channels > 1:
@@ -66,130 +36,47 @@ class SWTExtractor(nn.Module):
             coeff = out
 
         return coeff
-    
-    # def orthogonality_regularizer(self) -> torch.Tensor:
-    #     """
-    #     Encourages each kernel to have unit norm (orthonormal-like behavior).
-    #     """
-    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels,-1)
-
-    #     reg= torch.tensor(0.0, device=weight.device)
-    #     for i in range(self.in_features):
-    #         kernel = weight[i]
-    #         norm = kernel @ kernel.T
-    #         identity = torch.eye(self.channels, device=norm.device)
-    #         reg += torch.norm(norm - identity, p='fro') ** 2
-        
-    #     return reg
-    
-    # def variance_regularizer(self) -> torch.Tensor:
-    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
-    #     coef1_weights = weight[:, ::2, :]
-    #     coef2_weights = weight[:, 1::2, :]
-
-    #     coef2_var = coef2_weights.var(dim=-1).mean()
-    #     coef1_var = coef1_weights.var(dim=-1).mean()
-
-    #     return  -coef1_var
-
-    # def covariance_regularizer(self) -> torch.Tensor:
-    #     reg = torch.Tensor([0.0])
-    #     weight = self.conv_DW.weight.reshape(self.in_features, self.channels, -1)
-    #     for i in range(self.in_features):
-    #         filter_weight = weight[i]
-    #         covar_mat = filter_weight.cov()
-
-    #         covariance = (covar_mat - torch.diag(torch.diag(covar_mat))).triu().flatten()
-
-
-    #         # Positive Covariance test
-    #         reg -= covariance.pow(2).sum()
-
-
-    #     return reg
-
-
-class ComplexLowRank(nn.Module):
-    def __init__(self, in_features, out_features, rank=30, bias=True):
-        super(ComplexLowRank, self).__init__()
-        self.bias = bias
-        
-        Pr = torch.empty(in_features, rank)
-        Pi = torch.empty(in_features, rank)
-
-        nn.init.uniform_(Pr, a=-math.sqrt(1 / in_features), b=math.sqrt(1 / in_features))
-        nn.init.uniform_(Pi, a=-math.sqrt(1 / in_features), b=math.sqrt(1 / in_features))
-
-        Qr = torch.empty(rank, out_features)
-        Qi = torch.empty(rank, out_features)
-
-        nn.init.uniform_(Qr, a=-math.sqrt(1 / out_features), b=math.sqrt(1 / out_features))
-        nn.init.uniform_(Qi, a=-math.sqrt(1 / out_features), b=math.sqrt(1 / out_features))
-
-        P = torch.complex(Pr, Pi)
-        Q = torch.complex(Qr, Qi)
-
-        self.P = nn.Parameter(P, requires_grad=True)
-        self.Q = nn.Parameter(Q, requires_grad=True)
-
-
-        if bias:
-            br = torch.empty(out_features)
-            bi = torch.empty(out_features)
-            nn.init.uniform_(br, a=-math.sqrt(1 / in_features), b=math.sqrt(1 / in_features))
-            nn.init.uniform_(bi, a=-math.sqrt(1 / in_features), b=math.sqrt(1 / in_features))
-
-            b = torch.complex(br, bi)
-            self.b = nn.Parameter(b, requires_grad=True)
-        else:
-            self.register_parameter('b', None)
-
-
-    def forward(self, x):
-
-        out = x @ self.P @ self.Q
-
-        if self.b is not None:
-            out = out + self.b
-
-        return out
-
 
 class Model(nn.Module):
     """
-    Implements the HADL framework with optional Haar wavelet transformation, Discrete Cosine Transform (DCT) and Low Rank Approximation.
+    Implements the CLAW architecture that comprises of WSR blocks for iterative signal refinement followed by Complex-valued low-rank linear layer for prediction .
     """
     def __init__(self, configs):
         super(Model, self).__init__()
-        self.seq_len = configs.seq_len  # Input sequence length
-        self.pred_len = configs.pred_len  # Prediction horizon
-        self.channels = configs.enc_in  # Number of input channels (features)
-        self.rank = 30  # Rank for low-rank coef1imation
-        self.bias = 1  # Whether to include bias
-        self.individual = 0  # Use separate models per channel
-        self.enable_Haar = 1  # Enable Haar transformation
-        self.enable_DCT = 0  # Enable Discrete Cosine Transform
-        self.enable_iDCT = 0  # Enable Inverse Discrete Cosine Transform
-        self.enable_lowrank = 0  # Enable low-rank coef1imation
-        self.patch_size = 32
-        self.depth = 4
+        self.seq_len = configs.seq_len  # Input sequence length.
+        self.pred_len = configs.pred_len  # Prediction horizon.
+        self.channels = configs.enc_in  # Number of Input features.
 
-        self.dwt = nn.ModuleList([SWTExtractor(32, in_features=self.channels) for _ in range(self.depth)])
+        self.individual = configs.individual  # Use separate model per channel.
 
+        self.rank = configs.rank  # Rank for complex-valued low-rank linear layer.
+        self.no_of_filters = configs.filters # Number of filters/channels in WSR block.
+        self.filter_size = configs.filter_size  # Size of the filter/kernel.
+        self.extractor_depth = configs.extractor_depth  # Number of WSR blocks.
 
-        self.pred = ComplexLowRank(in_features=self.seq_len//2 + 1, 
-                                out_features=self.pred_len//2 + 1, 
-                                bias=self.bias,
-                                rank=20)
         
-        # self.pred = nn.Linear(self.seq_len, self.pred_len, True)
+        # Initialize the WSR blocks.
+        self.swt = nn.ModuleList([SWTExtractor(kernel_size=self.filter_size, 
+                                in_features=self.channels,
+                                channels=self.no_of_filters) for _ in range(self.extractor_depth)])
 
-        # self.pred = LowRank(self.seq_len, self.pred_len, rank=15, bias=True)
-        
+
+        if self.individual:
+            self.pred = nn.ModuleList(
+                    [ComplexLowRank(in_features=self.seq_len//2 + 1,
+                                    out_features=self.pred_len//2 + 1,
+                                    bias=True,
+                                    rank=self.rank) for _ in range(self.channels)]
+                                    )
+        else:
+            self.pred = ComplexLowRank(in_features=self.seq_len//2 + 1,
+                                    out_features=self.pred_len//2 + 1,
+                                    bias=True,
+                                    rank=self.rank)
+
 
     def forward(self, x):
         """
-        Forward pass of the model.
         x: Input tensor of shape [Batch, Input length, Channel]
         Returns: Output tensor of shape [Batch, Output length, Channel]
         """
@@ -202,26 +89,27 @@ class Model(nn.Module):
         seq_mean = torch.mean(x, axis=-1, keepdim=True)
         x = x - seq_mean  # Normalize input
         
-        for i in range(self.depth):
-            coefficients = self.dwt[i](x)
+        # Apply WSR to clean the signal.
+        for _ in range(self.extractor_depth):
+            coefficients = self.swt[_](x)
             x -= coefficients
 
-
+        # Convert to frequency domain using FFT.
         x = torch.fft.rfft(x, dim=-1, norm="backward")
 
-        out = self.pred(x)
+        # Perform final prediction.
+        if self.individual:
+            out = torch.empty(batch_size, self.channels, self.pred_len//2+1, device=x.device)
+            for i in range(self.channels):
+                pred = self.pred[i](x[:, i, :].view(batch_size, 1, -1))
+                out[:, i, :] = pred.view(batch_size, -1)
+        else:
+            out = self.pred(x)
        
+        # Convert back to time domain using inverse FFT.
         out = torch.fft.irfft(out, dim=-1, norm="backward", n=self.pred_len)
 
-        # De-normalize the output by adding back the mean
+        # De-normalize the output by adding back the mean.
         out = out + seq_mean
       
         return out.permute(0, 2, 1)  # Return output as [Batch, Output length, Channel]
-    
-
-    def regularizer(self):
-
-        reg = torch.tensor([0.0])
-        # for i in range(self.depth):
-        #     reg += self.dwt[i].covariance_regularizer()
-        return  1.0 * reg
