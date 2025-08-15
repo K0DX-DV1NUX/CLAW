@@ -38,7 +38,7 @@ model = Model(configs)
 | `enc_in`    | Number of input features                      | -       |
 | `individual`  | If True, applies a separate layer per feature | False   |
 | `extractor_depth` | Number of WSR Blocks                    | 4    |
-| `no_of_filters`  | Number of filters/channels per WSR Blocks(even only)             | 2     |
+| `no_of_filters`  | Number of filters/channels per WSR Blocks             | 2     |
 | `filter_size`  | Kernel size of filters in WSR Block (even only)    | 8    |
 | `rank`        | Rank of the complex low-rank layer                    | 15      |
 
